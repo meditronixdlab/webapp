@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Selector corporal · 3 partes</title>
+  <style>
+    :root{ --bg:#0b1220; --ink:#e5e7eb; --btn:#1f2937; }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;display:flex;align-items:center;justify-content:center;padding:16px}
+    .wrap{width:100%;max-width:520px;display:flex;flex-direction:column;gap:12px}
+    .stage{position:relative;aspect-ratio:9/16;width:100%;border-radius:12px;overflow:hidden;background:#0a1426}
+    .figure{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+    .hotspot{position:absolute;transform:translate(-50%,-50%);width:18%;display:none;filter:drop-shadow(0 0 4px rgba(0,0,0,.35));}
+    .hotspot.on{display:block}
+    #done{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #334155;background:var(--btn);color:var(--ink);font-size:16px}
+    #done:active{transform:translateY(1px)}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="stage" id="stage">
+      <img class="figure" src="https://meditronixdlab.github.io/webapp/imagenes/humano1-01.png" alt="humano"/>
+      <!-- Los círculos se crean por JS y se muestran al hacer click en su zona -->
+    </div>
+    <button id="done">Listo</button>
+  </main>
+
+  <script>
+    // ========= Assets =========
+    const BASE = 'https://meditronixdlab.github.io/webapp/imagenes/';
+    const ASSETS = [
+      {key:'cabeza',    name:'Cabeza',         url: BASE+'cabeza.png',   size:0.18},
+      {key:'cuello',    name:'Cuello',         url: BASE+'cuello.png',   size:0.18},
+      {key:'hombroIzq', name:'Hombro Izquierdo', url: BASE+'hombros.png',  size:0.20},
+      {key:'hombroDer', name:'Hombro Derecho',   url: BASE+'hombros2.png', size:0.20},
+      {key:'pecho',     name:'Pecho',          url: BASE+'pecho.png',    size:0.20},
+      {key:'estomago',  name:'Estómago',       url: BASE+'estomago.png', size:0.20},
+      {key:'pelvis',    name:'Pelvis',         url: BASE+'pelvis.png',   size:0.20},
+    ];
+
+    // ========= Posiciones normalizadas (0..1) =========
+    const POS = {
+      cabeza:{x:0.498, y:0.244},
+      cuello:{x:0.499, y:0.335},
+      hombroIzq:{x:0.350, y:0.360},
+      hombroDer:{x:0.632, y:0.356},
+      pecho:{x:0.494, y:0.399},
+      estomago:{x:0.499, y:0.486},
+      pelvis:{x:0.500, y:0.568},
+    };
+
+    // ========= Grupos lógicos (hombros = 1 selección que muestra dos imágenes) =========
+    const GROUPS = [
+      { key:'cabeza',   assets:['cabeza'] },
+      { key:'cuello',   assets:['cuello'] },
+      { key:'hombros',  assets:['hombroIzq','hombroDer'] },
+      { key:'pecho',    assets:['pecho'] },
+      { key:'estomago', assets:['estomago'] },
+      { key:'pelvis',   assets:['pelvis'] },
+    ];
+    const ASSET_BY_KEY = Object.fromEntries(ASSETS.map(a=>[a.key,a]));
+
+    const stage = document.getElementById('stage');
+
+    // Crear nodos (ocultos) para cada asset
+    const nodes = {};
+    ASSETS.forEach(a=>{
+      const img = document.createElement('img');
+      img.src = a.url; img.alt = a.name; img.className = 'hotspot';
+      img.style.left = (POS[a.key].x*100)+'%';
+      img.style.top  = (POS[a.key].y*100)+'%';
+      img.style.width = (a.size*100)+'%';
+      img.dataset.key = a.key;
+      stage.appendChild(img);
+      nodes[a.key] = img;
+    });
+
+    // Lógica de selección (máximo 3 grupos)
+    const queue = [];           // orden FIFO de grupos
+    const selected = new Set(); // keys de GROUPS
+
+    function showGroup(gkey){
+      const g = GROUPS.find(g=>g.key===gkey); if(!g) return;
+      g.assets.forEach(k=> nodes[k]?.classList.add('on'));
+    }
+    function hideGroup(gkey){
+      const g = GROUPS.find(g=>g.key===gkey); if(!g) return;
+      g.assets.forEach(k=> nodes[k]?.classList.remove('on'));
+    }
+    function toggleGroup(key){
+      if(selected.has(key)){
+        selected.delete(key);
+        const idx = queue.indexOf(key); if(idx>=0) queue.splice(idx,1);
+        hideGroup(key); return;
+      }
+      selected.add(key); queue.push(key); showGroup(key);
+      if(queue.length>3){ const old = queue.shift(); selected.delete(old); hideGroup(old); }
+    }
+
+    // Click por cercanía al centro del grupo
+    stage.addEventListener('click', (e)=>{
+      const rect = stage.getBoundingClientRect();
+      const px = e.clientX - rect.left; const py = e.clientY - rect.top;
+      let bestG = null, bestD = Infinity;
+      GROUPS.forEach(g=>{
+        let gBestD = Infinity; let inside = false;
+        g.assets.forEach(k=>{
+          const a = ASSET_BY_KEY[k]; if(!a) return;
+          const cx = POS[k].x * rect.width;
+          const cy = POS[k].y * rect.height;
+          const radius = (a.size * rect.width) * 0.5;
+          const d = Math.hypot(px - cx, py - cy);
+          if(d < gBestD) gBestD = d;
+          if(d < radius) inside = true;
+        });
+        if(inside && gBestD < bestD){ bestD = gBestD; bestG = g.key; }
+      });
+      if(bestG) toggleGroup(bestG);
+    });
+
+    // Botón "Listo": emite un evento y logea selección (puedes engancharlo desde tu app)
+    document.getElementById('done').addEventListener('click', ()=>{
+      const selection = [...queue]; // ordenadas de más antigua a reciente (máx 3)
+      console.log('Selección:', selection);
+      window.dispatchEvent(new CustomEvent('body-selection-done', { detail: { selected: selection } }));
+      // Si prefieres, descomenta la siguiente línea para copiar al portapapeles:
+      // navigator.clipboard.writeText(JSON.stringify({selected:selection}));
+    });
+  </script>
+</body>
+</html>
